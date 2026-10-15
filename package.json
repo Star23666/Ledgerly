@@ -1,17 +1,17 @@
 {
-  "name": "ledgerly",
+  "name": "yiyizhang",
   "version": "1.0.0",
-  "description": "A private, browser-based expense tracker with local data storage and visual spending insights.",
+  "description": "一页账：仅在本机保存数据的中文支出账本。",
   "type": "module",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/vincenzo-afk/Ledgerly.git"
+    "url": "git+https://github.com/Star23666/Ledgerly.git"
   },
   "bugs": {
-    "url": "https://github.com/vincenzo-afk/Ledgerly/issues"
+    "url": "https://github.com/Star23666/Ledgerly/issues"
   },
-  "homepage": "https://github.com/vincenzo-afk/Ledgerly#readme",
+  "homepage": "https://github.com/Star23666/Ledgerly#readme",
   "keywords": [
     "expense-tracker",
     "personal-finance",
@@ -26,6 +26,7 @@
     "start": "NODE_ENV=production node dist/index.js",
     "preview": "vite preview --host",
     "check": "tsc --noEmit",
+    "test": "vitest run",
     "format": "prettier --write ."
   },
   "dependencies": {
