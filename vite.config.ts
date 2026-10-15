@@ -207,6 +207,8 @@ const plugins = [react(), tailwindcss(), jsxLocPlugin(), vitePluginManusRuntime(
 
 export default defineConfig({
   plugins,
+  // GitHub Pages serves project sites below /<repository>/, not at the domain root.
+  base: process.env.GITHUB_PAGES === "true" ? "/Ledgerly/" : "/",
   resolve: {
     alias: {
       "@": path.resolve(import.meta.dirname, "client", "src"),
