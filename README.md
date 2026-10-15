@@ -36,6 +36,12 @@ corepack pnpm run build
 - [Canva 桌面页面稿](https://canva.link/an3val0cmnc3uvw)
 - [Canva 手机页面稿](https://canva.link/j1hl4xli69go2uc)
 
+## 公开预览
+
+项目可通过 GitHub Pages 发布到 `https://star23666.github.io/Ledgerly/`。在仓库 **Settings → Pages** 中将发布来源设为 **GitHub Actions**，合并部署工作流后，每次推送到 `main` 都会自动执行检查、构建并发布 `dist/public`。实际地址以 Pages 发布结果为准。
+
+部署构建使用 `GITHUB_PAGES=true` 将 Vite 资源路径设为 `/Ledgerly/`；本地开发仍使用 `/`。预览站保留 `noindex`，但任何知道链接的人都能访问。账本数据只存在访问者当前浏览器，`localhost` 的数据不会自动出现在 Pages 地址；需要时请先导出 JSON，再在预览站恢复。
+
 ## 许可与致谢
 
 本项目基于 Ledgerly，沿用其 [MIT 许可证](./LICENSE)。原作者版权声明保留在 `LICENSE` 中。页面重新设计与中文化由本 Fork 维护。
