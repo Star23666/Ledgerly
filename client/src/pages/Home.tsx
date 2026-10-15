@@ -1,389 +1,106 @@
-// Paper & Signal direction: use asymmetry, tactile linen surfaces, ledger rules, and Signal Coral for moments that matter.
-import { useEffect, useMemo, useState } from "react";
-import {
-  ArrowDownRight,
-  ArrowUpRight,
-  BarChart3,
-  CalendarDays,
-  Check,
-  ChevronDown,
-  CircleDollarSign,
-  Download,
-  FileJson,
-  FileText,
-  Filter,
-  Github,
-  LayoutDashboard,
-  ListFilter,
-  MoreHorizontal,
-  Pencil,
-  Plus,
-  Search,
-  Settings2,
-  Sparkles,
-  Target,
-  Trash2,
-  TrendingUp,
-  WalletCards,
-  X,
-} from "lucide-react";
-import {
-  Area,
-  AreaChart,
-  Bar,
-  BarChart,
-  CartesianGrid,
-  Cell,
-  Pie,
-  PieChart,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from "recharts";
+import { useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from "react";
+import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { ArrowDownToLine, ArrowUpFromLine, Check, ChevronRight, Github, Pencil, Plus, Search, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
+import { BUDGET_KEY, CATEGORIES, EXPENSES_KEY, categoryOf, formatCurrency, formatDate, makeBackup, parseBackup, readBudget, readExpenses, todayKey, type Backup, type Expense } from "@/lib/ledger";
 
-const REPOSITORY_URL = "https://github.com/vincenzo-afk/Ledgerly";
-
-type Expense = {
-  id: string;
-  amount: number;
-  category: string;
-  date: string;
-  note: string;
-};
-
-const CATEGORIES = [
-  { name: "Food", color: "#E35D45", tint: "#FBE5DF", icon: "🍽" },
-  { name: "Transport", color: "#3D7770", tint: "#E2F0ED", icon: "↗" },
-  { name: "Shopping", color: "#C3954B", tint: "#F5ECD8", icon: "□" },
-  { name: "Bills", color: "#536B82", tint: "#E7EDF2", icon: "⌁" },
-  { name: "Entertainment", color: "#98706A", tint: "#F1E6E4", icon: "✦" },
-  { name: "Health", color: "#6B8C63", tint: "#E8F0E5", icon: "+" },
-  { name: "Education", color: "#7A6C86", tint: "#ECE8F0", icon: "▤" },
-  { name: "Other", color: "#8E8B80", tint: "#EFEEE8", icon: "•••" },
-];
-
-const STORAGE_KEY = "paper-signal-expenses";
-const BUDGET_KEY = "paper-signal-budget";
-
-const SEEDED_IDS = new Set(["starter-1", "starter-2", "starter-3", "starter-4", "starter-5", "starter-6", "starter-7", "starter-8"]);
-
-const readStoredExpenses = (): Expense[] => {
-  try {
-    const saved = localStorage.getItem(STORAGE_KEY);
-    if (!saved) return [];
-    const parsed = JSON.parse(saved) as Expense[];
-    return Array.isArray(parsed) ? parsed.filter((expense) => expense && !SEEDED_IDS.has(expense.id)) : [];
-  } catch {
-    return [];
-  }
-};
-
-const readStoredBudget = () => {
-  const saved = localStorage.getItem(BUDGET_KEY);
-  return saved && saved !== "30000" ? Number(saved) || 0 : 0;
-};
-
-const createId = () => {
-  if (typeof crypto !== "undefined" && "randomUUID" in crypto) return crypto.randomUUID();
-  return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
-};
-
-const formatCurrency = (amount: number) =>
-  new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 }).format(amount);
-
-const formatDate = (date: string) =>
-  new Intl.DateTimeFormat("en-IN", { month: "short", day: "numeric", year: "numeric" }).format(new Date(`${date}T00:00:00`));
-
-const monthLabel = (date: Date) =>
-  new Intl.DateTimeFormat("en-IN", { month: "short" }).format(date);
-
-function getCategory(name: string) {
-  return CATEGORIES.find((category) => category.name === name) ?? CATEGORIES[CATEGORIES.length - 1];
+const REPOSITORY_URL = "https://github.com/Star23666/Ledgerly";
+const newForm = () => ({ amount: "", category: "food", date: todayKey(), note: "" });
+function download(content: string, name: string, type: string) {
+  const url = URL.createObjectURL(new Blob([content], { type }));
+  const link = document.createElement("a");
+  link.href = url; link.download = name; document.body.appendChild(link); link.click(); link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
-
-function MetricCard({ label, value, trend, accent, detail }: { label: string; value: string; trend?: string; accent: string; detail: string }) {
-  return (
-    <article className="metric-card">
-      <div className="metric-card__topline">
-        <span className="eyebrow">{label}</span>
-        <span className="metric-card__accent" style={{ backgroundColor: accent }} />
-      </div>
-      <div className="metric-card__value">{value}</div>
-      <div className="metric-card__footer">
-        {trend ? <span className="trend-chip"><ArrowUpRight size={14} /> {trend}</span> : <span className="trend-chip trend-chip--neutral"><Target size={13} /> tracking</span>}
-        <span className="metric-card__detail">{detail}</span>
-      </div>
-    </article>
-  );
-}
-
-function CategoryPill({ category }: { category: string }) {
-  const meta = getCategory(category);
-  return (
-    <span className="category-pill" style={{ backgroundColor: meta.tint, color: meta.color }}>
-      <span className="category-pill__icon">{meta.icon}</span>
-      {category}
-    </span>
-  );
+function saveCsv(expenses: Expense[]) {
+  const cell = (value: string | number) => `"${String(value).replaceAll('"', '""')}"`;
+  const rows = ["日期,分类,金额,备注", ...expenses.map((item) => [item.date, categoryOf(item.category).label, item.amount, item.note].map(cell).join(","))];
+  download(`\uFEFF${rows.join("\r\n")}`, "一页账-支出.csv", "text/csv;charset=utf-8");
+  toast.success("CSV 已导出");
 }
 
 export default function Home() {
-  const [expenses, setExpenses] = useState<Expense[]>(readStoredExpenses);
-  const [budget, setBudget] = useState(readStoredBudget);
+  const [expenses, setExpenses] = useState<Expense[]>(readExpenses);
+  const [budget, setBudget] = useState(readBudget);
   const [period, setPeriod] = useState("this-month");
-  const [categoryFilter, setCategoryFilter] = useState("All categories");
+  const [categoryFilter, setCategoryFilter] = useState("all");
   const [search, setSearch] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [form, setForm] = useState({ amount: "", category: "Food", date: new Date().toISOString().slice(0, 10), note: "" });
-  const today = new Date();
-  const currentDateLabel = new Intl.DateTimeFormat("en-IN", { weekday: "long", day: "numeric", month: "long", year: "numeric" }).format(today);
-  const currentMonthStamp = new Intl.DateTimeFormat("en-IN", { month: "short" }).format(today).toUpperCase();
-  const currentDayStamp = new Intl.DateTimeFormat("en-IN", { day: "2-digit" }).format(today);
+  const [form, setForm] = useState(newForm);
+  const [pendingBackup, setPendingBackup] = useState<Backup | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const formRef = useRef<HTMLElement>(null);
+  const now = new Date();
+  const month = now.getMonth();
+  const year = now.getFullYear();
+  const monthTitle = new Intl.DateTimeFormat("zh-CN", { year: "numeric", month: "long" }).format(now);
 
-  useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(expenses));
-  }, [expenses]);
+  useEffect(() => { try { localStorage.setItem(EXPENSES_KEY, JSON.stringify(expenses)); } catch { toast.error("存储空间不足，请先导出备份。"); } }, [expenses]);
+  useEffect(() => { try { localStorage.setItem(BUDGET_KEY, String(budget)); } catch { toast.error("预算未能保存，请检查浏览器存储空间。"); } }, [budget]);
 
-  useEffect(() => {
-    localStorage.setItem(BUDGET_KEY, String(budget));
-  }, [budget]);
-
+  const monthlyExpenses = useMemo(() => expenses.filter((item) => {
+    const date = new Date(`${item.date}T00:00:00`);
+    return date.getFullYear() === year && date.getMonth() === month;
+  }), [expenses, year, month]);
+  const monthTotal = monthlyExpenses.reduce((sum, item) => sum + item.amount, 0);
+  const remaining = budget - monthTotal;
+  const budgetProgress = budget > 0 ? Math.min(100, monthTotal / budget * 100) : 0;
   const visibleExpenses = useMemo(() => {
-    const today = new Date();
-    const currentMonth = today.getMonth();
-    const currentYear = today.getFullYear();
-    return expenses
-      .filter((expense) => {
-        const expenseDate = new Date(`${expense.date}T00:00:00`);
-        if (period === "this-month" && (expenseDate.getMonth() !== currentMonth || expenseDate.getFullYear() !== currentYear)) return false;
-        if (period === "last-month") {
-          const last = new Date(currentYear, currentMonth - 1, 1);
-          if (expenseDate.getMonth() !== last.getMonth() || expenseDate.getFullYear() !== last.getFullYear()) return false;
-        }
-        if (categoryFilter !== "All categories" && expense.category !== categoryFilter) return false;
-        if (search && !`${expense.note} ${expense.category}`.toLowerCase().includes(search.toLowerCase())) return false;
-        return true;
-      })
-      .sort((a, b) => b.date.localeCompare(a.date));
-  }, [expenses, period, categoryFilter, search]);
+    const previous = new Date(year, month - 1, 1);
+    const query = search.trim().toLocaleLowerCase("zh-CN");
+    return expenses.filter((item) => {
+      const date = new Date(`${item.date}T00:00:00`);
+      if (period === "this-month" && (date.getFullYear() !== year || date.getMonth() !== month)) return false;
+      if (period === "last-month" && (date.getFullYear() !== previous.getFullYear() || date.getMonth() !== previous.getMonth())) return false;
+      if (categoryFilter !== "all" && item.category !== categoryFilter) return false;
+      return !query || `${item.note} ${categoryOf(item.category).label}`.toLocaleLowerCase("zh-CN").includes(query);
+    }).sort((a, b) => b.date.localeCompare(a.date));
+  }, [expenses, period, categoryFilter, search, year, month]);
+  const chartData = useMemo(() => Array.from({ length: 7 }, (_, index) => {
+    const day = new Date(year, month, now.getDate() - 6 + index);
+    const key = `${day.getFullYear()}-${String(day.getMonth() + 1).padStart(2, "0")}-${String(day.getDate()).padStart(2, "0")}`;
+    return { name: new Intl.DateTimeFormat("zh-CN", { weekday: "short" }).format(day), amount: expenses.filter((item) => item.date === key).reduce((sum, item) => sum + item.amount, 0) };
+  }), [expenses, year, month, now.getDate()]);
+  const categoryTotals = CATEGORIES.map((category) => ({ ...category, amount: monthlyExpenses.filter((item) => item.category === category.id).reduce((sum, item) => sum + item.amount, 0) })).filter((item) => item.amount > 0).sort((a, b) => b.amount - a.amount);
 
-  const stats = useMemo(() => {
-    const total = visibleExpenses.reduce((sum, expense) => sum + expense.amount, 0);
-    const highest = visibleExpenses.reduce((max, expense) => Math.max(max, expense.amount), 0);
-    const dates = new Set(visibleExpenses.map((expense) => expense.date));
-    return { total, highest, count: visibleExpenses.length, average: dates.size ? total / dates.size : 0, days: dates.size };
-  }, [visibleExpenses]);
-
-  const categoryData = useMemo(() => {
-    const totals = visibleExpenses.reduce<Record<string, number>>((acc, expense) => {
-      acc[expense.category] = (acc[expense.category] || 0) + expense.amount;
-      return acc;
-    }, {});
-    return Object.entries(totals).sort((a, b) => b[1] - a[1]).map(([name, value]) => ({ name, value, color: getCategory(name).color }));
-  }, [visibleExpenses]);
-
-  const timelineData = useMemo(() => {
-    const days = Array.from({ length: 7 }, (_, index) => {
-      const date = new Date();
-      date.setDate(date.getDate() - (6 - index));
-      const key = date.toISOString().slice(0, 10);
-      const amount = visibleExpenses.filter((expense) => expense.date === key).reduce((sum, expense) => sum + expense.amount, 0);
-      return { date: key, label: new Intl.DateTimeFormat("en-IN", { weekday: "short" }).format(date), amount };
-    });
-    return days;
-  }, [visibleExpenses]);
-
-  const quietestDay = useMemo(() => {
-    if (!visibleExpenses.length) return null;
-    return timelineData.reduce((quietest, item) => item.amount < quietest.amount ? item : quietest, timelineData[0]);
-  }, [timelineData, visibleExpenses.length]);
-
-  const monthlyData = useMemo(() => {
-    return Array.from({ length: 6 }, (_, index) => {
-      const date = new Date();
-      date.setMonth(date.getMonth() - (5 - index), 1);
-      const month = date.getMonth();
-      const year = date.getFullYear();
-      const amount = expenses.filter((expense) => {
-        const expenseDate = new Date(`${expense.date}T00:00:00`);
-        return expenseDate.getMonth() === month && expenseDate.getFullYear() === year;
-      }).reduce((sum, expense) => sum + expense.amount, 0);
-      return { label: monthLabel(date), amount };
-    });
-  }, [expenses]);
-
-  const budgetProgress = budget > 0 ? Math.min((stats.total / budget) * 100, 100) : 0;
-
-  const resetForm = () => {
-    setEditingId(null);
-    setForm({ amount: "", category: "Food", date: new Date().toISOString().slice(0, 10), note: "" });
-  };
-
-  const handleSubmit = (event: React.FormEvent) => {
+  const resetForm = () => { setEditingId(null); setForm(newForm()); };
+  const jumpToForm = () => formRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  const handleSubmit = (event: FormEvent) => {
     event.preventDefault();
     const amount = Number(form.amount);
-    if (!amount || amount <= 0 || !form.date) {
-      toast.error("Add a positive amount and a date before saving.");
-      return;
-    }
+    if (!Number.isFinite(amount) || amount <= 0 || amount > 100000000 || !form.date) { toast.error("请输入有效的金额和日期。"); return; }
+    const note = form.note.trim() || "未填写备注";
     if (editingId) {
-      setExpenses((current) => current.map((expense) => expense.id === editingId ? { ...expense, amount, category: form.category, date: form.date, note: form.note.trim() || "Unlabelled expense" } : expense));
-      toast.success("Expense updated in your ledger.");
+      setExpenses((current) => current.map((item) => item.id === editingId ? { ...item, amount, category: form.category, date: form.date, note } : item));
+      toast.success("支出已更新");
     } else {
-      setExpenses((current) => [{ id: createId(), amount, category: form.category, date: form.date, note: form.note.trim() || "Unlabelled expense" }, ...current]);
-      toast.success("Expense added to your ledger.");
+      setExpenses((current) => [{ id: crypto.randomUUID(), amount, category: form.category, date: form.date, note }, ...current]);
+      toast.success("支出已记录");
     }
     resetForm();
   };
-
-  const handleEdit = (expense: Expense) => {
-    setEditingId(expense.id);
-    setForm({ amount: String(expense.amount), category: expense.category, date: expense.date, note: expense.note });
-    document.getElementById("record-expense")?.scrollIntoView({ behavior: "smooth", block: "center" });
+  const handleEdit = (item: Expense) => { setEditingId(item.id); setForm({ amount: String(item.amount), category: item.category, date: item.date, note: item.note === "未填写备注" ? "" : item.note }); jumpToForm(); };
+  const handleDelete = (item: Expense) => { if (!window.confirm(`删除“${item.note}”这笔 ${formatCurrency(item.amount)} 的支出？`)) return; setExpenses((current) => current.filter((entry) => entry.id !== item.id)); toast.success("支出已删除"); };
+  const saveJson = () => { download(JSON.stringify(makeBackup(expenses, budget), null, 2), "一页账-备份.json", "application/json;charset=utf-8"); toast.success("JSON 备份已导出"); };
+  const handleFile = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]; event.target.value = "";
+    if (!file) return;
+    if (file.size > 5 * 1024 * 1024) { toast.error("备份文件不能超过 5 MB。"); return; }
+    try { setPendingBackup(parseBackup(await file.text())); }
+    catch (error) { toast.error(error instanceof SyntaxError ? "JSON 文件无法读取。" : error instanceof Error ? error.message : "备份文件无效。"); }
   };
+  const restore = () => { if (!pendingBackup) return; setExpenses(pendingBackup.expenses); setBudget(pendingBackup.budget); setPendingBackup(null); resetForm(); toast.success("备份已恢复"); };
 
-  const handleDelete = (id: string) => {
-    const expense = expenses.find((item) => item.id === id);
-    if (!expense || !window.confirm(`Remove ${formatCurrency(expense.amount)} from your ledger?`)) return;
-    setExpenses((current) => current.filter((item) => item.id !== id));
-    toast.success("Expense removed.");
-  };
-
-  const exportFile = (format: "json" | "csv") => {
-    const csvEscape = (value: string | number) => `"${String(value).replaceAll('"', '""')}"`;
-    const content = format === "json"
-      ? JSON.stringify(expenses, null, 2)
-      : ["Date,Category,Amount,Note", ...expenses.map((expense) => [expense.date, expense.category, expense.amount, expense.note].map(csvEscape).join(","))].join("\n");
-    const blob = new Blob([content], { type: format === "json" ? "application/json;charset=utf-8" : "text/csv;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = `ledgerly-expenses.${format}`;
-    link.setAttribute("aria-hidden", "true");
-    link.style.display = "none";
-    document.body.appendChild(link);
-    link.click();
-    window.setTimeout(() => {
-      link.remove();
-      URL.revokeObjectURL(url);
-    }, 100);
-    toast.success(`${format.toUpperCase()} export ready.`);
-  };
-
-  return (
-    <div className="app-shell">
-      <aside className="sidebar">
-        <div className="brand-lockup">
-          <div className="brand-mark" aria-hidden="true"><span /><i /></div>
-          <div>
-            <p className="brand-name">Ledgerly</p>
-            <p className="brand-caption">Personal finance, read clearly.</p>
-          </div>
-        </div>
-
-        <nav className="sidebar-nav" aria-label="Primary navigation">
-          <p className="nav-label">Workspace</p>
-          <a className="nav-item nav-item--active" href="#overview"><LayoutDashboard size={17} /> Overview <span className="nav-item__dot" /></a>
-          <a className="nav-item" href="#transactions"><ListFilter size={17} /> Transactions</a>
-          <a className="nav-item" href="#insights"><BarChart3 size={17} /> Insights</a>
-        </nav>
-
-        <div className="sidebar-rule" />
-        <div className="budget-module">
-          <div className="budget-module__heading"><span className="nav-label">Monthly budget</span><Target size={16} /></div>
-          <div className="budget-input-wrap"><span>₹</span><input aria-label="Monthly budget" type="number" min="0" placeholder="Set amount" value={budget || ""} onChange={(event) => setBudget(Number(event.target.value) || 0)} /></div>
-          <div className="budget-progress"><span style={{ width: `${budgetProgress}%` }} /></div>
-          <div className="budget-module__meta"><span>{formatCurrency(stats.total)} used</span><span>{budget > 0 ? (Math.max(0, budget - stats.total) > 0 ? `${formatCurrency(budget - stats.total)} left` : "Budget reached") : "No limit set"}</span></div>
-        </div>
-
-        <div className="sidebar-bottom">
-          <div className="profile-card"><div><strong>Local ledger</strong><span>Stored in this browser</span></div><MoreHorizontal size={17} /></div>
-          <a className="repo-link" href={REPOSITORY_URL} target="_blank" rel="noreferrer"><Github size={16} /> Open repository <ArrowUpRight size={14} /></a>
-          <button className="settings-link" type="button" onClick={() => toast.info("Your ledger is stored locally in this browser.")}><Settings2 size={16} /> Preferences</button>
-        </div>
-      </aside>
-
-      <main className="main-content">
-        <header className="topbar">
-          <div className="breadcrumb"><span>Workspace</span><span>/</span><strong>Overview</strong></div>
-          <div className="topbar-actions"><a className="repo-topbar" href={REPOSITORY_URL} target="_blank" rel="noreferrer"><Github size={15} /> <span>GitHub</span></a><span className="sync-note"><span className="sync-dot" /> Saved locally</span><button className="icon-button" type="button" onClick={() => exportFile("json")} aria-label="Export JSON"><Download size={17} /></button></div>
-        </header>
-
-        <section className="intro-section" id="overview">
-          <div>
-            <p className="section-kicker"><span className="coral-line" /> {currentDateLabel}</p>
-            <h1>Give every rupee<br /><em>a place in the story.</em></h1>
-            <p className="intro-copy">A calmer view of your everyday spending. Read the rhythm, notice the patterns, and keep moving with intention.</p>
-          </div>
-          <div className="intro-art" aria-hidden="true"><span className="art-line art-line--one" /><span className="art-line art-line--two" /><span className="art-dot art-dot--one" /><span className="art-dot art-dot--two" /><div className="art-note">{currentMonthStamp}<br /><strong>{currentDayStamp}</strong></div></div>
-        </section>
-
-        <section className="metric-grid" aria-label="Expense summary">
-          <MetricCard label="Total spent" value={formatCurrency(stats.total)} accent="#E35D45" detail="current view" />
-          <MetricCard label="Transactions" value={String(stats.count).padStart(2, "0")} accent="#3D7770" detail="current view" />
-          <MetricCard label="Largest expense" value={formatCurrency(stats.highest)} accent="#C3954B" detail="single transaction" />
-          <MetricCard label="Daily average" value={formatCurrency(stats.average)} accent="#536B82" detail={`${stats.days || 0} recorded days`} />
-        </section>
-
-        <div className="workspace-grid">
-          <div className="analysis-column">
-            <section className="panel panel--chart" id="insights">
-              <div className="panel-heading"><div><p className="eyebrow"><span className="section-index">01</span> Spending rhythm</p><h2>Where your money moves</h2></div><div className="chart-legend"><span><i className="legend-swatch legend-swatch--coral" /> Daily spend</span></div></div>
-              <div className="chart-wrap chart-wrap--area">
-                <ResponsiveContainer width="100%" height="100%">
-                  <AreaChart data={timelineData} margin={{ top: 16, right: 8, left: -12, bottom: 0 }}>
-                    <defs><linearGradient id="signalFill" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#E35D45" stopOpacity={0.24} /><stop offset="100%" stopColor="#E35D45" stopOpacity={0.02} /></linearGradient></defs>
-                    <CartesianGrid vertical={false} stroke="#E2DED4" strokeDasharray="2 5" />
-                    <XAxis dataKey="label" tickLine={false} axisLine={false} tick={{ fill: "#8D8D84", fontSize: 11 }} dy={10} />
-                    <YAxis tickLine={false} axisLine={false} tick={{ fill: "#A2A097", fontSize: 10 }} tickFormatter={(value) => value === 0 ? "0" : `₹${value / 1000}k`} width={35} />
-                    <Tooltip cursor={{ stroke: "#D9D4C8", strokeWidth: 1 }} contentStyle={{ border: "1px solid #DCD7CB", borderRadius: 10, background: "#FFFEFA", fontFamily: "DM Sans", fontSize: 12 }} formatter={(value) => [formatCurrency(Number(value)), "Spent"]} />
-                    <Area type="monotone" dataKey="amount" stroke="#E35D45" strokeWidth={2.5} fill="url(#signalFill)" dot={{ r: 3.5, fill: "#FFFEFA", stroke: "#E35D45", strokeWidth: 2 }} activeDot={{ r: 5, fill: "#E35D45", stroke: "#FFFEFA", strokeWidth: 3 }} />
-                  </AreaChart>
-                </ResponsiveContainer>
-              </div>
-              <div className="chart-footnote"><span><TrendingUp size={14} /> {quietestDay ? `Lowest recorded day: ${quietestDay.label}.` : "Add entries to reveal your daily rhythm."}</span><button className="text-button" type="button" onClick={() => toast.info("Daily rhythm is based on the visible expenses in the last seven days.")}>How this is calculated <ArrowUpRight size={14} /></button></div>
-            </section>
-
-            <div className="split-panels">
-              <section className="panel panel--donut">
-                <div className="panel-heading panel-heading--compact"><div><p className="eyebrow"><span className="section-index">02</span> By category</p><h2>Spend composition</h2></div><button className="kebab-button" type="button" aria-label="Chart options" onClick={() => toast.info("Category chart reflects your current filters.")}><MoreHorizontal size={17} /></button></div>
-                <div className="donut-layout"><div className="donut-chart"><ResponsiveContainer width="100%" height="100%"><PieChart><Pie data={categoryData.length ? categoryData : [{ name: "No data", value: 1, color: "#E4E0D7" }]} innerRadius={54} outerRadius={76} paddingAngle={3} dataKey="value" stroke="none">{(categoryData.length ? categoryData : [{ name: "No data", value: 1, color: "#E4E0D7" }]).map((entry, index) => <Cell key={`cell-${index}`} fill={entry.color} />)}</Pie><Tooltip formatter={(value) => formatCurrency(Number(value))} contentStyle={{ border: "1px solid #DCD7CB", borderRadius: 10, background: "#FFFEFA", fontSize: 12 }} /></PieChart></ResponsiveContainer><div className="donut-center"><strong>{formatCurrency(stats.total)}</strong><span>total</span></div></div><div className="category-legend">{(categoryData.length ? categoryData.slice(0, 4) : [{ name: "No data", value: 0, color: "#E4E0D7" }]).map((item) => <div className="category-legend__row" key={item.name}><span><i style={{ backgroundColor: item.color }} />{item.name}</span><strong>{stats.total ? Math.round((item.value / stats.total) * 100) : 0}%</strong></div>)}</div></div>
-              </section>
-
-              <section className="panel panel--bars">
-                <div className="panel-heading panel-heading--compact"><div><p className="eyebrow"><span className="section-index">03</span> Six month view</p><h2>Monthly pulse</h2></div><span className="mini-stamp">₹</span></div>
-                <div className="chart-wrap chart-wrap--bars"><ResponsiveContainer width="100%" height="100%"><BarChart data={monthlyData} margin={{ top: 10, right: 0, left: -28, bottom: 0 }}><CartesianGrid vertical={false} stroke="#E7E2D8" strokeDasharray="2 5" /><XAxis dataKey="label" tickLine={false} axisLine={false} tick={{ fill: "#8D8D84", fontSize: 10 }} dy={8} /><YAxis hide /><Tooltip cursor={{ fill: "#F5F0E7" }} contentStyle={{ border: "1px solid #DCD7CB", borderRadius: 10, background: "#FFFEFA", fontSize: 12 }} formatter={(value) => [formatCurrency(Number(value)), "Spent"]} /><Bar dataKey="amount" radius={[4, 4, 1, 1]} fill="#3D7770" /></BarChart></ResponsiveContainer></div>
-              </section>
-            </div>
-          </div>
-
-          <aside className="record-column">
-            <section className={`panel record-panel ${editingId ? "record-panel--editing" : ""}`} id="record-expense">
-              <div className="record-panel__top"><div className="record-icon"><Plus size={19} /></div><div><p className="eyebrow">{editingId ? "Edit entry" : "New entry"}</p><h2>{editingId ? "Refine the record" : "Record an expense"}</h2></div>{editingId && <button className="close-edit" type="button" onClick={resetForm} aria-label="Cancel editing"><X size={17} /></button>}</div>
-              <p className="record-copy">Keep the little things visible. They add up to a picture.</p>
-              <form onSubmit={handleSubmit} className="expense-form">
-                <label className="field field--amount"><span>Amount</span><div className="amount-input"><b>₹</b><input required inputMode="decimal" type="number" min="1" step="1" placeholder="0" value={form.amount} onChange={(event) => setForm({ ...form, amount: event.target.value })} /></div></label>
-                <div className="form-row"><label className="field"><span>Category</span><div className="select-wrap"><select value={form.category} onChange={(event) => setForm({ ...form, category: event.target.value })}>{CATEGORIES.map((category) => <option key={category.name}>{category.name}</option>)}</select><ChevronDown size={15} /></div></label><label className="field"><span>Date</span><div className="date-input"><input required type="date" value={form.date} onChange={(event) => setForm({ ...form, date: event.target.value })} /><CalendarDays size={15} /></div></label></div>
-                <label className="field"><span>Note <em>optional</em></span><input type="text" maxLength={48} placeholder="What was it for?" value={form.note} onChange={(event) => setForm({ ...form, note: event.target.value })} /></label>
-                <button className="primary-button" type="submit">{editingId ? <><Check size={17} /> Save changes</> : <><Plus size={17} /> Add to ledger</>}<ArrowUpRight size={16} /></button>
-                {editingId && <button className="cancel-button" type="button" onClick={resetForm}>Cancel edit</button>}
-              </form>
-            </section>
-
-            <section className="insight-note"><div className="insight-note__icon"><Sparkles size={16} /></div><div><p className="eyebrow">A small observation</p><p>{categoryData.length ? <>{categoryData[0].name} is leading the month at <strong>{formatCurrency(categoryData[0].value)}</strong>. A little awareness is already a useful change.</> : <>Your ledger is waiting for its first line. Add an expense to see your story take shape.</>}</p></div></section>
-          </aside>
-        </div>
-
-        <section className="panel transactions-panel" id="transactions">
-          <div className="transactions-header"><div><p className="eyebrow"><span className="section-index">04</span> Your ledger</p><h2>Recent transactions</h2></div><div className="transaction-actions"><button className="secondary-button" type="button" onClick={() => exportFile("csv")}><FileText size={15} /> Export CSV</button><button className="secondary-button secondary-button--icon" type="button" onClick={() => exportFile("json")} aria-label="Export JSON"><FileJson size={16} /></button></div></div>
-          <div className="filter-bar"><div className="search-box"><Search size={16} /><input type="search" placeholder="Search your ledger" value={search} onChange={(event) => setSearch(event.target.value)} /></div><div className="filter-control"><Filter size={15} /><select value={period} onChange={(event) => setPeriod(event.target.value)}><option value="this-month">This month</option><option value="last-month">Last month</option><option value="all">All time</option></select><ChevronDown size={14} /></div><div className="filter-control"><ListFilter size={15} /><select value={categoryFilter} onChange={(event) => setCategoryFilter(event.target.value)}><option>All categories</option>{CATEGORIES.map((category) => <option key={category.name}>{category.name}</option>)}</select><ChevronDown size={14} /></div><span className="filter-count">{visibleExpenses.length} entries</span></div>
-          <div className="transaction-table-wrap"><table className="transaction-table"><thead><tr><th>Transaction</th><th>Category</th><th>Date</th><th className="amount-column">Amount</th><th aria-label="Actions" /></tr></thead><tbody>{visibleExpenses.length ? visibleExpenses.map((expense) => <tr key={expense.id}><td><div className="transaction-name"><span className="transaction-mark" style={{ backgroundColor: getCategory(expense.category).color }} /> <span><strong>{expense.note}</strong><small>Local record</small></span></div></td><td><CategoryPill category={expense.category} /></td><td className="date-cell">{formatDate(expense.date)}</td><td className="amount-cell">{formatCurrency(expense.amount)}</td><td><div className="row-actions"><button type="button" onClick={() => handleEdit(expense)} aria-label={`Edit ${expense.note}`}><Pencil size={15} /></button><button type="button" onClick={() => handleDelete(expense.id)} aria-label={`Delete ${expense.note}`}><Trash2 size={15} /></button></div></td></tr>) : <tr><td colSpan={5}><div className="empty-state"><div className="empty-state__mark"><Search size={18} /></div><strong>No entries in this view</strong><span>Try another filter or record a new expense.</span></div></td></tr>}</tbody></table></div>
-        </section>
-
-        <footer className="app-footer"><span>Ledgerly / Paper & Signal</span><span><span className="footer-dot" /> All records stay in this browser</span></footer>
-      </main>
-    </div>
-  );
+  return <div className="app">
+    <header className="site-header"><a className="wordmark" href="#top" aria-label="一页账，返回顶部"><span className="wordmark-icon" aria-hidden="true">一</span><span>一页账</span></a><nav aria-label="主导航"><a href="#overview">总览</a><a href="#records">支出记录</a><a href="#backup">数据备份</a></nav><span className="local-badge"><span/> 数据仅保存在本机</span></header>
+    <main id="top">
+      <section className="page-heading"><div><p className="date-line">{monthTitle} · 把每笔日常看清楚</p><h1>这个月，钱花在了哪里？</h1><p>记下一笔，留下一份清楚的生活账。</p></div><button type="button" className="primary-button heading-button" onClick={jumpToForm}><Plus size={18}/> 记一笔</button></section>
+      <div className="dashboard" id="overview"><section className="receipt" aria-labelledby="receipt-title"><div className="receipt-top"><span>月度账页</span><span>{monthTitle}</span></div><p className="receipt-label" id="receipt-title">本月支出</p><strong className="receipt-total">{formatCurrency(monthTotal)}</strong><div className="receipt-line"/><div className="receipt-pair"><span>已记录</span><strong>{monthlyExpenses.length} 笔</strong></div><div className="receipt-pair"><span>月度预算</span><strong>{budget > 0 ? formatCurrency(budget) : "尚未设置"}</strong></div><div className="receipt-pair receipt-pair--final"><span>{budget > 0 ? (remaining >= 0 ? "预算剩余" : "超出预算") : "开始规划预算"}</span><strong>{budget > 0 ? formatCurrency(Math.abs(remaining)) : "从这里开始"}</strong></div><div className="receipt-progress" role="progressbar" aria-label="预算使用进度" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(budgetProgress)}><span style={{ width: `${budgetProgress}%` }}/></div><p className="receipt-hint">{budget > 0 ? `已使用预算的 ${Math.round(monthTotal / budget * 100)}%` : "设置一个预算，随时知道还可以花多少。"}</p><label className="budget-field"><span>设置月度预算</span><span className="budget-input"><span>¥</span><input aria-label="月度预算金额" type="number" min="0" max="100000000" step="0.01" placeholder="输入金额" value={budget || ""} onChange={(event) => setBudget(Math.min(100000000, Math.max(0, Number(event.target.value) || 0)))}/></span></label></section>
+        <div className="dashboard-side"><section className="surface trend-panel" aria-labelledby="trend-title"><div className="section-heading"><div><p className="section-overline">最近 7 天</p><h2 id="trend-title">支出趋势</h2></div><span>按记录日期统计</span></div><div className="chart-box"><ResponsiveContainer width="100%" height="100%"><AreaChart data={chartData} margin={{ top: 10, right: 8, left: -18, bottom: 2 }}><defs><linearGradient id="trendFill" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#508275" stopOpacity={0.24}/><stop offset="100%" stopColor="#508275" stopOpacity={0}/></linearGradient></defs><CartesianGrid vertical={false} stroke="#e8e6df" strokeDasharray="3 6"/><XAxis dataKey="name" tickLine={false} axisLine={false} tick={{ fill: "#79847d", fontSize: 12 }}/><YAxis tickLine={false} axisLine={false} tick={{ fill: "#79847d", fontSize: 11 }} width={48}/><Tooltip formatter={(value) => [formatCurrency(Number(value)), "支出"]} contentStyle={{ borderRadius: 12, border: "1px solid #e6e4dc" }}/><Area type="monotone" dataKey="amount" stroke="#3e7769" strokeWidth={2.5} fill="url(#trendFill)"/></AreaChart></ResponsiveContainer></div></section><section className="surface category-panel" aria-labelledby="category-title"><div className="section-heading"><div><p className="section-overline">本月分布</p><h2 id="category-title">支出分类</h2></div></div>{categoryTotals.length ? <div className="category-list">{categoryTotals.slice(0, 5).map((item) => <div className="category-row" key={item.id}><span><i style={{ background: item.color }}/>{item.label}</span><div className="category-track"><i style={{ width: `${item.amount / monthTotal * 100}%`, background: item.color }}/></div><strong>{formatCurrency(item.amount)}</strong></div>)}</div> : <p className="quiet-empty">还没有本月支出。记下第一笔后，这里会显示分类情况。</p>}</section></div></div>
+      <div className="lower-grid"><section className="surface records-panel" id="records" aria-labelledby="records-title"><div className="section-heading records-heading"><div><p className="section-overline">每一笔，都找得到</p><h2 id="records-title">支出记录 <small>{visibleExpenses.length} 笔</small></h2></div><button type="button" className="text-action" onClick={() => saveCsv(expenses)}><ArrowDownToLine size={16}/> 导出 CSV</button></div><div className="filters"><label className="search-field"><Search size={17}/><input type="search" aria-label="搜索支出记录" placeholder="搜索备注或分类" value={search} onChange={(event) => setSearch(event.target.value)}/></label><label><span className="sr-only">时间范围</span><select value={period} onChange={(event) => setPeriod(event.target.value)}><option value="this-month">本月</option><option value="last-month">上月</option><option value="all">全部时间</option></select></label><label><span className="sr-only">支出分类</span><select value={categoryFilter} onChange={(event) => setCategoryFilter(event.target.value)}><option value="all">全部分类</option>{CATEGORIES.map((item) => <option value={item.id} key={item.id}>{item.label}</option>)}</select></label></div><div className="record-list">{visibleExpenses.length ? visibleExpenses.map((item) => <article className="record-item" key={item.id}><span className="record-category-dot" style={{ background: categoryOf(item.category).color }}/><div className="record-main"><strong>{item.note}</strong><span>{categoryOf(item.category).label} · {formatDate(item.date)}</span></div><strong className="record-amount">{formatCurrency(item.amount)}</strong><div className="record-actions"><button type="button" onClick={() => handleEdit(item)} aria-label={`编辑${item.note}`} title="编辑"><Pencil size={17}/></button><button type="button" onClick={() => handleDelete(item)} aria-label={`删除${item.note}`} title="删除"><Trash2 size={17}/></button></div></article>) : <div className="records-empty"><span className="empty-illustration">＋</span><strong>{expenses.length ? "没有找到符合条件的支出" : "账页还是空的"}</strong><p>{expenses.length ? "试试更换时间、分类或搜索词。" : "记下第一笔日常开销，账页就会慢慢清晰。"}</p><button type="button" onClick={jumpToForm}>去记一笔 <ChevronRight size={16}/></button></div>}</div></section>
+        <aside className="side-stack"><section className="surface entry-panel" ref={formRef} id="record-expense" aria-labelledby="entry-title"><div className="section-heading"><div><p className="section-overline">{editingId ? "修改记录" : "花了多少，记一下"}</p><h2 id="entry-title">{editingId ? "编辑支出" : "记一笔支出"}</h2></div>{editingId && <button type="button" className="icon-action" onClick={resetForm} aria-label="取消编辑"><X size={18}/></button>}</div><form onSubmit={handleSubmit} className="entry-form"><label>金额 <span>¥</span><input aria-label="支出金额" required type="number" min="0.01" max="100000000" step="0.01" inputMode="decimal" placeholder="0.00" value={form.amount} onChange={(event) => setForm({ ...form, amount: event.target.value })}/></label><div className="form-two"><label>分类<select value={form.category} onChange={(event) => setForm({ ...form, category: event.target.value })}>{CATEGORIES.map((item) => <option value={item.id} key={item.id}>{item.label}</option>)}</select></label><label>日期<input required type="date" value={form.date} onChange={(event) => setForm({ ...form, date: event.target.value })}/></label></div><label>备注 <small>选填</small><input type="text" maxLength={100} placeholder="例如：午餐" value={form.note} onChange={(event) => setForm({ ...form, note: event.target.value })}/></label><button className="primary-button" type="submit">{editingId ? <><Check size={18}/> 保存修改</> : <><Plus size={18}/> 保存这笔支出</>}</button></form></section><section className="surface backup-panel" id="backup"><div className="section-heading"><div><p className="section-overline">数据留在自己手里</p><h2>备份与恢复</h2></div></div><p>记录仅保存在当前浏览器。定期导出备份，换设备或清除浏览器数据前尤其重要。</p><div className="backup-actions"><button type="button" onClick={saveJson}><ArrowDownToLine size={17}/> 导出 JSON 备份</button><button type="button" onClick={() => fileInputRef.current?.click()}><ArrowUpFromLine size={17}/> 恢复备份</button></div><input ref={fileInputRef} className="sr-only" type="file" accept=".json,application/json" onChange={handleFile} aria-label="选择 JSON 备份文件"/></section></aside></div>
+    </main>
+    <footer className="site-footer"><span>一页账 · 把日常记清楚</span><span>基于 <a href="https://github.com/vincenzo-afk/Ledgerly" target="_blank" rel="noreferrer">Ledgerly</a> 改造 · <a href={REPOSITORY_URL} target="_blank" rel="noreferrer"><Github size={14}/> 查看代码</a></span></footer>
+    {pendingBackup && <div className="dialog-backdrop" role="presentation"><section className="restore-dialog" role="dialog" aria-modal="true" aria-labelledby="restore-title"><button className="dialog-close" type="button" onClick={() => setPendingBackup(null)} aria-label="关闭"><X size={19}/></button><p className="section-overline">恢复数据</p><h2 id="restore-title">确认替换当前账本？</h2><p>备份中有 <strong>{pendingBackup.expenses.length} 笔支出</strong>，月度预算为 <strong>{formatCurrency(pendingBackup.budget)}</strong>。恢复后，当前浏览器内的 {expenses.length} 笔记录会被替换。建议先导出当前备份。</p><div className="dialog-actions"><button type="button" onClick={() => setPendingBackup(null)}>取消</button><button type="button" className="primary-button" onClick={restore}>确认恢复</button></div></section></div>}
+  </div>;
 }

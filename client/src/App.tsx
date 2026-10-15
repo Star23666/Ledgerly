@@ -1,4 +1,3 @@
-// Paper & Signal direction: a warm editorial ledger with Forest Ink structure, Linen surfaces, and Signal Coral actions.
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import NotFound from "@/pages/NotFound";

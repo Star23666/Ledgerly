@@ -1,4 +1,2 @@
 User-agent: *
-Allow: /
-
-Sitemap: https://ledgerly.manus.space/sitemap.xml
+Disallow: /
